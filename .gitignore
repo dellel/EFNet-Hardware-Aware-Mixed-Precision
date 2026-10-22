@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+# Données médicales
+data/
+*.avi
+*.mp4
+
+# Modèles et checkpoints
+*.pth
+*.pt
+*.ckpt
+*.onnx
+*.engine
+
+# Résultats expérimentaux volumineux
+experiments/*/best_model.pth
+experiments/*/last_model.pth
+
+# Fichiers système
+.DS_Store
+
+# Résultats et checkpoints expérimentaux
+experiments/
+*.csv
+*.json
+*.log
+*.png
+
+# Sauvegardes locales
+*.bak
+*.pre_finetune_v1.bak
