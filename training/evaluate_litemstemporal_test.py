@@ -15,13 +15,17 @@ from data.echonet_video_dataset import (
     EchoVideoDataset,
     load_video_records,
 )
-from models.LiteMSTemporalEFNet import LiteMSTemporalEFNet
+from models.LiteMSTemporalEFNet_v2 import LiteMSTemporalEFNet
 
 
 def calculate_metrics(targets, predictions):
     errors = predictions - targets
-    mae = float(np.mean(np.abs(errors)))
+    abs_errors = np.abs(errors)
+
+    mae = float(np.mean(abs_errors))
     rmse = float(np.sqrt(np.mean(errors ** 2)))
+    bias = float(np.mean(errors))
+    error_std = float(np.std(errors, ddof=1)) if len(errors) > 1 else 0.0
 
     if len(targets) > 1 and np.var(targets) > 0:
         r2 = float(1.0 - np.sum(errors ** 2) /
@@ -31,17 +35,58 @@ def calculate_metrics(targets, predictions):
         r2 = float("nan")
         pearson = float("nan")
 
-    return {
+    # Lin's concordance correlation coefficient
+    var_true = float(np.var(targets))
+    var_pred = float(np.var(predictions))
+    denominator = var_true + var_pred + (float(np.mean(targets))
+                                          - float(np.mean(predictions))) ** 2
+    ccc = (float(2 * np.mean((targets - np.mean(targets)) *
+                             (predictions - np.mean(predictions))) /
+                 denominator)
+           if denominator > 0 else float("nan"))
+
+    # Bland-Altman limits of agreement
+    loa_lower = bias - 1.96 * error_std
+    loa_upper = bias + 1.96 * error_std
+
+    metrics = {
         "mae": mae,
         "rmse": rmse,
+        "medae": float(np.median(abs_errors)),
+        "p90_absolute_error": float(np.percentile(abs_errors, 90)),
+        "p95_absolute_error": float(np.percentile(abs_errors, 95)),
         "r2": r2,
         "pearson": pearson,
-        "bias": float(np.mean(errors)),
+        "ccc": ccc,
+        "bias": bias,
+        "error_std": error_std,
+        "bland_altman_loa_lower": float(loa_lower),
+        "bland_altman_loa_upper": float(loa_upper),
+        "within_5_points_pct": float(100 * np.mean(abs_errors <= 5)),
+        "within_10_points_pct": float(100 * np.mean(abs_errors <= 10)),
+        "within_15_points_pct": float(100 * np.mean(abs_errors <= 15)),
     }
+
+    # Descriptive MAE by true LVEF interval
+    intervals = [
+        ("lt_30", -float("inf"), 30),
+        ("30_40", 30, 40),
+        ("40_50", 40, 50),
+        ("50_60", 50, 60),
+        ("ge_60", 60, float("inf")),
+    ]
+    for name, lower, upper in intervals:
+        mask = (targets >= lower) & (targets < upper)
+        metrics[f"mae_lvef_{name}"] = (
+            float(np.mean(abs_errors[mask])) if np.any(mask) else None
+        )
+        metrics[f"n_lvef_{name}"] = int(np.sum(mask))
+
+    return metrics
 
 
 def main():
-    output_dir = ROOT / "experiments/litemstemporal_video64"
+    output_dir = ROOT / "experiments/litemstemporal_v2"
     checkpoint_path = output_dir / "best_model.pth"
     stats_path = output_dir / "train_pixel_stats.json"
 
@@ -97,9 +142,10 @@ def main():
 
     model = LiteMSTemporalEFNet(
         seq_len=64,
-        temporal_dim=128,
+        temporal_dim=256,
         pretrained=False,
         dropout=0.2,
+        freeze_backbone_bn=True,
     ).to(device)
 
     checkpoint = torch.load(
