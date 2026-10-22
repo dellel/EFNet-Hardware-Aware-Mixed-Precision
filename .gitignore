@@ -5,8 +5,11 @@ __pycache__/
 venv/
 .env
 
-# Données médicales
-data/
+# Données médicales : conserver les scripts Python, ignorer les données
+data/*
+!data/*.py
+!data/**/
+!data/**/*.py
 *.avi
 *.mp4
 
